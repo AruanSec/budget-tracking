@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# Env & secrets
+.env
+.env.local
+*.local
+
+# Database & backups
+*.db
+*.sqlite3
+backups/
+
+# Tailscale state
+tailscale/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

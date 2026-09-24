@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-budget}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-budget}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-budget} -d ${POSTGRES_DB:-budget}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      BUDGET_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-budget}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-budget}
+      BUDGET_SEED_USERS: ${BUDGET_SEED_USERS:-}
+      BUDGET_JWT_SECRET: ${BUDGET_JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # CMD runs `alembic upgrade head` on boot, then uvicorn.
+    # One-time household bootstrap:
+    #   docker compose exec api python -m app.seed
+
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      # Loopback only — Tailscale Serve (or your LAN) exposes it, never a
+      # forwarded public port.
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - api
+
+  # Optional: enable with `docker compose --profile tailscale up -d`.
+  # Shares the web container's network namespace so `tailscale serve`
+  # proxies https://<hostname>.<tailnet>.ts.net -> localhost:80 with an
+  # auto-renewed Let's Encrypt cert. Requires TS_AUTHKEY in .env for the
+  # first join (or pre-authed state in the ts-state volume).
+  tailscale:
+    image: tailscale/tailscale:latest
+    profiles: ["tailscale"]
+    restart: unless-stopped
+    hostname: ${TS_HOSTNAME:-budget}
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      - ts-state:/var/lib/tailscale
+      - ./tailscale-config:/config:ro
+    devices:
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    network_mode: service:web
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  ts-state:
