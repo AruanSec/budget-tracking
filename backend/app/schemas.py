@@ -170,3 +170,81 @@ class AccountOut(BaseModel):
     name: str
     type: str
     archived: bool
+
+
+# ---------- partial updates (PATCH) ----------
+
+class AccountUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    type: str | None = Field(default=None, max_length=32)
+    archived: bool | None = None
+
+
+class CategoryUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    parent_id: int | None = None
+
+
+class IncomeSourceUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    active: bool | None = None
+
+
+class TransactionUpdate(BaseModel):
+    """Partial update. `type` is immutable — delete and re-enter instead.
+    If `splits` is given, it replaces the whole set (must sum to the
+    effective amount)."""
+
+    amount_cents: int | None = Field(default=None, gt=0)
+    occurred_on: date | None = None
+    description: str | None = Field(default=None, max_length=255)
+    account_id: int | None = None
+    category_id: int | None = None
+    income_source_id: int | None = None
+    paid_by: int | None = None
+    splits: list[SplitIn] | None = None
+
+
+# ---------- dashboard ----------
+
+class MemberSpent(BaseModel):
+    member_id: int
+    spent_cents: int
+
+
+class CategorySummary(BaseModel):
+    category_id: int | None
+    name: str
+    spent_cents: int
+    budget_cents: int
+    per_member: list[MemberSpent] = []
+
+
+class HouseholdSummary(BaseModel):
+    income_cents: int
+    expense_cents: int
+    net_cents: int
+    budget_cents: int
+    budget_used_pct: float | None
+
+
+class MemberSummary(BaseModel):
+    member_id: int
+    display_name: str
+    income_cents: int
+    expense_cents: int
+    budget_cents: int
+    budget_used_pct: float | None
+
+
+class DashboardSummary(BaseModel):
+    month: str  # YYYY-MM
+    household: HouseholdSummary
+    members: list[MemberSummary]
+    by_category: list[CategorySummary]
+
+
+class TrendPoint(BaseModel):
+    month: str  # YYYY-MM
+    income_cents: int
+    expense_cents: int

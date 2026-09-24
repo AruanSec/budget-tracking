@@ -140,7 +140,14 @@ at the API layer (Pydantic validator) and DB layer (constraint/trigger).
 
 ---
 
-## Phase 2 — MVP: Manual Tracking (~4–6 weeks)
+## Phase 2 — MVP: Manual Tracking (~4–6 weeks) — **IMPLEMENTED**
+
+> Status (2026-09-24): all endpoints from `docs/API.md` built and marked ✅.
+> 27 backend tests green against Postgres 16; frontend typechecks + builds;
+> 21/21 end-to-end checks pass against the live compose stack (split CRUD,
+> PATCH split-replacement, idempotent budget upsert, dashboard aggregates,
+> trend, auth wall). Exit criterion remaining: real-world use for a month —
+> "without friction" is a human verdict.
 
 - Manual transaction entry, edit, delete (optimized for speed on mobile).
 - Categories with basic hierarchy.

@@ -4,7 +4,8 @@ Base path: `/api` (same-origin: nginx proxies `/api/` to FastAPI).
 Auth: `Authorization: Bearer <jwt>` on everything except `/api/health`
 and `/api/auth/login`. Tokens last 7 days.
 
-Status legend: ✅ implemented in Phase 1 · 📋 contract only, built in Phase 2+.
+Status legend: ✅ implemented and covered by tests. Phase 2 built every
+contract below — verified against the live compose stack end-to-end.
 
 ## Implemented (Phase 1)
 
@@ -22,37 +23,37 @@ Status legend: ✅ implemented in Phase 1 · 📋 contract only, built in Phase 
 → `200 {"id": 1, "username": "alice", "display_name": "Alice"}`
 → `401` when missing/invalid token.
 
-## Contracts (Phase 2)
+## Implemented (Phase 2)
 
 All money fields are integer cents. All write endpoints validate the same
 rules the DB enforces, returning `422` with Pydantic error detail.
 
 ### Members
-- `GET /api/members` 📋 → list of users (id, username, display_name).
+- `GET /api/members` ✅ → list of users (id, username, display_name).
 
 ### Accounts
-- `GET /api/accounts` 📋
-- `POST /api/accounts` 📋 `{name, type}`
-- `PATCH /api/accounts/{id}` 📋 (rename, archive)
+- `GET /api/accounts` ✅
+- `POST /api/accounts` ✅ `{name, type}`
+- `PATCH /api/accounts/{id}` ✅ (rename, archive)
 
 ### Categories
-- `GET /api/categories` 📋 → flat list with `parent_id`; client builds tree
-- `POST /api/categories` 📋 `{name, parent_id?}`
-- `PATCH /api/categories/{id}` 📋
-- `DELETE /api/categories/{id}` 📋 → transactions keep history (SET NULL),
+- `GET /api/categories` ✅ → flat list with `parent_id`; client builds tree
+- `POST /api/categories` ✅ `{name, parent_id?}`
+- `PATCH /api/categories/{id}` ✅
+- `DELETE /api/categories/{id}` ✅ → transactions keep history (SET NULL),
   budgets for it are removed
 
 ### Income sources
-- `GET /api/income-sources` 📋 (filter `?active=true`)
-- `POST /api/income-sources` 📋 `{name, member_id}`
-- `PATCH /api/income-sources/{id}` 📋
+- `GET /api/income-sources` ✅ (filter `?active=true`)
+- `POST /api/income-sources` ✅ `{name, member_id}`
+- `PATCH /api/income-sources/{id}` ✅
 
 ### Transactions
-- `GET /api/transactions` 📋
+- `GET /api/transactions` ✅
   Query params: `month=YYYY-MM`, `member_id`, `category_id`, `type`,
   `from`/`to` (dates), `limit`/`offset`. Response items include nested
   `splits`.
-- `POST /api/transactions` 📋
+- `POST /api/transactions` ✅
 ```json
 {
   "type": "expense",
@@ -72,19 +73,19 @@ rules the DB enforces, returning `422` with Pydantic error detail.
   `amount_cents`, unique members; income ⇒ `income_source_id`, no splits,
   no category. `entered_by` is always the authenticated user (server-set,
   never client-supplied).
-- `PATCH /api/transactions/{id}` 📋 — replacing splits replaces the whole
+- `PATCH /api/transactions/{id}` ✅ — replacing splits replaces the whole
   set; deferred trigger still guarantees the sum at commit.
-- `DELETE /api/transactions/{id}` 📋 — cascades splits.
+- `DELETE /api/transactions/{id}` ✅ — cascades splits.
 
 ### Budgets
-- `GET /api/budgets?month=YYYY-MM` 📋 → all members' budget lines for the
+- `GET /api/budgets?month=YYYY-MM` ✅ → all members' budget lines for the
   month; `?member_id=` to filter.
-- `PUT /api/budgets` 📋 — upsert `{member_id, category_id, month, amount_cents}`
+- `PUT /api/budgets` ✅ — upsert `{member_id, category_id, month, amount_cents}`
   (`month` must be day 1; unique key makes PUT idempotent).
-- `DELETE /api/budgets/{id}` 📋
+- `DELETE /api/budgets/{id}` ✅
 
 ### Dashboard (the combined-analysis read model)
-- `GET /api/dashboard/summary?month=YYYY-MM` 📋
+- `GET /api/dashboard/summary?month=YYYY-MM` ✅
 ```json
 {
   "month": "2026-09",
@@ -114,7 +115,7 @@ rules the DB enforces, returning `422` with Pydantic error detail.
 ```
   Member expense figures = sums of **split shares** (shared costs already
   divided). Household figures = sums over all members.
-- `GET /api/dashboard/trend?months=6` 📋 — month-over-month income/expense
+- `GET /api/dashboard/trend?months=6` ✅ — month-over-month income/expense
   series for the combined view.
 
 ## Conventions
