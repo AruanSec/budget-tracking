@@ -1,82 +1,145 @@
 # Household Budget
 
 Income-vs-expense tracking for one household. Per-person budgets with
-split shared expenses; combined household dashboard.
+split shared expenses; combined household dashboard. Self-hosted on
+home hardware, reachable only over Tailscale (or LAN) — no public
+ports, no SaaS.
+
+**Stack:** FastAPI + SQLAlchemy 2 + Alembic · PostgreSQL 16 · Vite +
+React (TS) + Tailwind, served by nginx (which also proxies `/api`) ·
+Docker Compose · Tailscale Serve for hostname + TLS.
 
 See `PLAN.md` for the phased plan, `docs/SCHEMA.md` for the data model,
 `docs/API.md` for REST contracts.
 
-**Stack:** Vite + React (TS) + Tailwind · FastAPI · PostgreSQL 16 ·
-Alembic · Docker Compose · Tailscale Serve (hostname + TLS, in-house).
-
 ## Layout
 
 ```
-backend/    FastAPI app, SQLAlchemy models, Alembic migrations, pytest
-frontend/   Vite React TS app, served by nginx (also proxies /api)
+backend/    FastAPI app (app/), Alembic migrations, pytest suite
+frontend/   React SPA; nginx container serves it and proxies /api -> api:8000
 docs/       SCHEMA.md, API.md
-tailscale-config/serve.json   Tailscale Serve config (443 -> localhost:80)
+tailscale-config/serve.json   Tailscale Serve config (https -> web:80)
+.github/workflows/ci.yml      backend tests + frontend build on push/PR
 ```
 
-## Local development
+## Prerequisites
 
-Prereqs: Docker, Python 3.12+, Node 22+.
+Docker (with the Compose plugin), Python 3.12+, Node 22+ (dev/test
+only — the containers need none of the latter).
+
+## Spin up the full stack (recommended)
+
+From the repo root:
 
 ```sh
-# database
-docker run -d --name budget-pg-dev -e POSTGRES_USER=budget \
-  -e POSTGRES_PASSWORD='***' -e POSTGRES_DB=budget \
-  -p 127.0.0.1:5432:5432 postgres:16-alpine
-docker exec budget-pg-dev psql -U budget -d budget -c 'CREATE DATABASE budget_test;'
+cp .env.example .env    # then edit .env — see first-boot values below
+docker compose up -d --build
+curl -s http://127.0.0.1:8080/api/health   # {"status":"ok"}
+```
 
-# backend
+That's it: the `api` container runs `alembic upgrade head` before
+serving, so migrations apply themselves on every boot. The app listens
+on **127.0.0.1:8080 only** — expose it with Tailscale (below) or your
+LAN reverse proxy.
+
+`.env` first-boot values:
+
+- `POSTGRES_PASSWORD` — anything strong; the `pgdata` volume keeps it
+  consistent after the first boot.
+- `BUDGET_JWT_SECRET` — generate: `openssl rand -hex 32` (rotating it
+  signs everyone out, by design).
+- `BUDGET_SEED_USERS` — optional; see bootstrap below. Clear it after
+  seeding so passwords don't linger in `.env`.
+
+### First users
+
+Two equivalent paths:
+
+1. **Seed (one-shot bootstrap):** set `BUDGET_SEED_USERS='alice:pw:Alice:admin,bob:pw2:Bob'`
+   and run `docker compose exec api python -m app.seed` (idempotent).
+   Format: `username:password[:Display Name[:role]]`, role defaults to
+   `member`.
+2. **Register:** open `http://127.0.0.1:8080/register` (or the
+   tailnet URL). The **first** user to register — or to log in — on an
+   install with no admin claims `admin`; everyone after that joins as
+   `member`.
+
+After the first admin exists: members sign up at `/register`; the
+admin manages roles, enable/disable, password resets, deletion, and
+household stats at `/admin`. Lockout guards prevent an admin from
+demoting/disabling/deleting themselves or removing the last active
+admin.
+
+### Reach it from the household devices (Tailscale)
+
+```sh
+# .env: TS_AUTHKEY (from login.tailscale.com/admin/settings/keys), TS_HOSTNAME=budget
+docker compose --profile tailscale up -d
+```
+
+Then browse `https://<TS_HOSTNAME>.<your-tailnet>.ts.net` from any
+device on the tailnet (both members' devices must be joined). TLS certs
+are issued and auto-renewed by Tailscale.
+
+### Day-2 operations
+
+```sh
+docker compose logs -f api        # uvicorn + migration output
+docker compose ps                 # postgres must be (healthy); web/api Up
+docker compose up -d --build      # redeploy after pulling changes
+docker compose down               # stop (data survives in the pgdata volume)
+```
+
+Backups: cron'd `pg_dump` off-box + a periodic restore test — recipe in
+`docs/SCHEMA.md` § Backups.
+
+## Development (hot reload, no image rebuilds)
+
+Run the DB from the compose stack, the app on the host:
+
+```sh
+docker compose up -d postgres     # loopback 127.0.0.1:5432 is published for this
+
+# backend — shell 1
 cd backend
 python3 -m venv .venv && source .venv/bin/activate   # or: uv venv
 pip install -e '.[dev]'
+export BUDGET_DATABASE_URL='postgresql+psycopg://budget:***@localhost:5432/budget'
 alembic upgrade head
-BUDGET_DATABASE_URL='postgresql+psycopg://budget:***@localhost:5432/budget_test' pytest -q
-uvicorn app.main:app --reload   # http://localhost:8000, docs at /docs
+uvicorn app.main:app --reload     # API on :8000, OpenAPI docs at /docs
 
-# frontend (separate shell)
+# frontend — shell 2
 cd frontend
 npm install
-npm run dev   # http://localhost:5173, proxies /api -> :8000
+npm run dev                       # http://localhost:5173, proxies /api -> :8000
 ```
 
-Note: local dev uses the literal placeholder password `***` (matches the defaults in `backend/app/config.py` and the test conftest). Production deployments set real values in `.env`.
+`dev-secret` matches the defaults in `backend/app/config.py` and keeps
+the example copy-pasteable; for real deployments always set a random
+`BUDGET_JWT_SECRET`.
 
-Bootstrap household users (once):
+## Tests & builds
 
 ```sh
-BUDGET_SEED_USERS='alice:PASSWORD1:Alice:admin,bob:PASSWORD2:Bob' python -m app.seed
+# backend (46 tests; needs the compose postgres up)
+docker compose exec -T postgres psql -U budget -tAc \
+  "CREATE DATABASE budget_test" 2>/dev/null || true
+cd backend && source .venv/bin/activate
+export BUDGET_DATABASE_URL='postgresql+psycopg://budget:***@localhost:5432/budget_test'
+alembic upgrade head      # migrations are idempotent per DB version
+pytest -q
+
+# frontend
+cd frontend && npm run build      # tsc -b && vite build; npm run lint (oxlint)
 ```
 
-Roles: `username:password[:Display Name[:role]]` (role defaults to
-`member`). Either way, the first user to register or log in on an
-install without an admin claims `admin`. After that, signups at
-`/register` join as members and an admin manages everyone at `/admin`
-(roles, enable/disable, password resets, deletion, household stats).
-
-## Deployment (in-house)
-
-```sh
-cp .env.example .env    # set POSTGRES_PASSWORD, BUDGET_JWT_SECRET (openssl rand -hex 32),
-                        # BUDGET_SEED_USERS for first boot, TS_AUTHKEY for tailscale profile
-docker compose up -d --build                       # app on 127.0.0.1:8080
-docker compose exec api python -m app.seed         # one-time user bootstrap
-docker compose --profile tailscale up -d           # adds Tailscale Serve
-```
-
-Then browse `https://<TS_HOSTNAME>.<your-tailnet>.ts.net` from any device
-joined to the tailnet. No public ports are forwarded; Tailscale terminates
-TLS with an auto-renewed Let's Encrypt cert.
-
-Backups: cron `pg_dump` off-box and restore-test it periodically
-(example in `docs/SCHEMA.md`).
+CI (`.github/workflows/ci.yml`) runs the same on every push/PR against
+a fresh Postgres service, plus the frontend build.
 
 ## Phase status
 
 - [x] Phase 0 — scoping (see PLAN.md)
 - [x] Phase 1 — schema, migrations, auth, scaffold, compose, CI
-- [ ] Phase 2 — MVP manual tracking + dashboard
-- [ ] Phase 3+ — import/automation, insights, hardening
+- [x] Phase 2 — manual tracking MVP + dashboard (live E2E verified)
+- [x] Phase 2.5 — self-service registration + admin portal
+- [ ] Phase 3 — CSV import / automation (exit criterion: ≥80% auto-categorized)
