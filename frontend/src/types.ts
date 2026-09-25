@@ -1,6 +1,19 @@
 // Types mirroring docs/API.md — money is integer cents everywhere.
 
-export type Member = { id: number; username: string; display_name: string }
+export type Role = 'admin' | 'member'
+export type Member = { id: number; username: string; display_name: string; role: Role }
+export type AdminUser = Member & { is_active: boolean; created_at: string }
+export type AdminStats = {
+  users_total: number
+  users_active: number
+  admins_active: number
+  accounts_total: number
+  categories_total: number
+  income_sources_total: number
+  budgets_total: number
+  transactions_total: number
+  transactions_this_month_cents: number
+}
 export type Account = { id: number; name: string; type: string; archived: boolean }
 export type Category = { id: number; name: string; parent_id: number | null }
 export type IncomeSource = { id: number; name: string; member_id: number; active: boolean }

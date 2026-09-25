@@ -12,6 +12,12 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=2, max_length=64, pattern=r"^[\w.-]+$")
+    password: str = Field(min_length=8, max_length=128)
+    display_name: str | None = Field(default=None, max_length=128)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -23,6 +29,7 @@ class UserOut(BaseModel):
     id: int
     username: str
     display_name: str
+    role: str
 
 
 # ---------- transactions ----------
@@ -248,3 +255,46 @@ class TrendPoint(BaseModel):
     month: str  # YYYY-MM
     income_cents: int
     expense_cents: int
+
+
+# ---------- admin ----------
+
+
+class AdminUserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    display_name: str
+    role: str
+    is_active: bool
+    created_at: object
+
+
+class AdminUserCreate(BaseModel):
+    username: str = Field(min_length=2, max_length=64, pattern=r"^[\w.-]+$")
+    password: str = Field(min_length=8, max_length=128)
+    display_name: str | None = Field(default=None, max_length=128)
+    role: Literal["admin", "member"] = "member"
+
+
+class AdminUserUpdate(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=128)
+    role: Literal["admin", "member"] | None = None
+    is_active: bool | None = None
+
+
+class PasswordSetRequest(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+
+
+class AdminStats(BaseModel):
+    users_total: int
+    users_active: int
+    admins_active: int
+    accounts_total: int
+    categories_total: int
+    income_sources_total: int
+    budgets_total: int
+    transactions_total: int
+    transactions_this_month_cents: int

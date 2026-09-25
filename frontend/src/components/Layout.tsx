@@ -7,11 +7,13 @@ const tabs = [
   { to: '/transactions', label: 'Activity', icon: '⇄' },
   { to: '/budgets', label: 'Budgets', icon: '◎' },
   { to: '/settings', label: 'Settings', icon: '⚙' },
+  { to: '/admin', label: 'Admin', icon: '🛡', adminOnly: true },
 ]
 
 export default function Layout() {
   const navigate = useNavigate()
   const { data: me } = useMe()
+  const visibleTabs = tabs.filter((t) => !('adminOnly' in t && t.adminOnly) || me?.role === 'admin')
 
   function logout() {
     clearToken()
@@ -36,7 +38,7 @@ export default function Layout() {
         </div>
         {/* Desktop nav */}
         <nav className="mx-auto hidden max-w-5xl gap-1 px-4 pb-2 md:flex">
-          {tabs.map((t) => (
+          {visibleTabs.map((t) => (
             <NavLink
               key={t.to}
               to={t.to}
@@ -60,8 +62,11 @@ export default function Layout() {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-10 grid grid-cols-4 border-t border-slate-800 bg-slate-950/95 backdrop-blur md:hidden">
-        {tabs.map((t) => (
+      <nav
+        className="fixed inset-x-0 bottom-0 z-10 grid border-t border-slate-800 bg-slate-950/95 backdrop-blur md:hidden"
+        style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}
+      >
+        {visibleTabs.map((t) => (
           <NavLink
             key={t.to}
             to={t.to}

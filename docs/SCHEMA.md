@@ -43,7 +43,8 @@ Household members (design for N, currently 2).
 | username | varchar(64) | unique, indexed |
 | display_name | varchar(128) | |
 | password_hash | varchar(255) | argon2 |
-| is_active | bool | default true |
+| role | varchar(16) | 'admin' \| 'member' (check constraint), default 'member'; first user on an admin-less install claims admin |
+| is_active | bool | default true; disabled users can't log in or use issued tokens |
 | created_at | timestamptz | |
 
 ### accounts

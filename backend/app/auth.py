@@ -5,6 +5,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -24,6 +25,20 @@ def verify_password(password: str, password_hash: str) -> bool:
         return ph.verify(password_hash, password)
     except VerifyMismatchError:
         return False
+
+
+def claim_admin_if_none(db: Session, user: User) -> User:
+    """Bootstrap rule: if the household has no admin yet, whoever just
+    authenticated claims the role. Safe for a single-household app — the
+    only way to hit it is knowing a valid password (or registering on a
+    fresh install)."""
+    has_admin = db.scalar(
+        select(User.id).where(User.role == "admin").limit(1)
+    )
+    if has_admin is None:
+        user.role = "admin"
+        db.commit()
+    return user
 
 
 def create_token(user: User) -> str:
@@ -61,3 +76,11 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive"
         )
     return user
+
+
+def require_admin(current: User = Depends(get_current_user)) -> User:
+    if current.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
+        )
+    return current

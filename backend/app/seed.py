@@ -1,11 +1,14 @@
 """Bootstrap the household: create initial users from the environment.
 
 Usage:
-    BUDGET_SEED_USERS='alice:secretpw: Alice,bob:otherpw:Bob' python -m app.seed
+    BUDGET_SEED_USERS='alice:secretpw:Alice:admin,bob:otherpw:Bob' python -m app.seed
 
-Format per user: username:password[:Display Name]  (display name defaults
-to the capitalized username). Idempotent — existing users are skipped.
-This is a one-time household bootstrap, not a signup flow.
+Format per user: username:password[:Display Name[:role]]  (display name
+defaults to the capitalized username, role to 'member' — but the first
+user ever to log in on an admin-less install claims 'admin' anyway).
+Idempotent — existing users are skipped. This is a one-time household
+bootstrap, not a signup flow; self-service registration is at
+POST /api/auth/register.
 """
 
 import os
@@ -30,7 +33,8 @@ def seed() -> None:
                 print(f"skipping malformed entry: {entry!r}")
                 continue
             username, password = parts[0].strip(), parts[1]
-            display = parts[2].strip() if len(parts) > 2 else username.capitalize()
+            display = parts[2].strip() if len(parts) > 2 and parts[2].strip() else username.capitalize()
+            role = parts[3].strip() if len(parts) > 3 and parts[3].strip() in ("admin", "member") else "member"
             if db.query(User).filter(User.username == username).first():
                 print(f"user {username!r} already exists; skipping")
                 continue
@@ -39,6 +43,7 @@ def seed() -> None:
                     username=username,
                     display_name=display,
                     password_hash=hash_password(password),
+                    role=role,
                 )
             )
             print(f"created user {username!r}")

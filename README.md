@@ -48,8 +48,14 @@ Note: local dev uses the literal placeholder password `***` (matches the default
 Bootstrap household users (once):
 
 ```sh
-BUDGET_SEED_USERS='alice:PASSWORD1:Alice,bob:PASSWORD2:Bob' python -m app.seed
+BUDGET_SEED_USERS='alice:PASSWORD1:Alice:admin,bob:PASSWORD2:Bob' python -m app.seed
 ```
+
+Roles: `username:password[:Display Name[:role]]` (role defaults to
+`member`). Either way, the first user to register or log in on an
+install without an admin claims `admin`. After that, signups at
+`/register` join as members and an admin manages everyone at `/admin`
+(roles, enable/disable, password resets, deletion, household stats).
 
 ## Deployment (in-house)
 

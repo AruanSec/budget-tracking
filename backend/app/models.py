@@ -34,14 +34,24 @@ class Base(DeclarativeBase):
 
 
 class User(Base):
-    """A household member (design for N, currently 2)."""
+    """A household member (design for N, currently 2).
+
+    `role` is 'admin' or 'member'. Bootstrap rule: the first user to
+    register or log in when no admin exists claims 'admin' (see
+    app.auth.claim_admin_if_none); there must always be at least one
+    active admin (enforced by the admin router's guards).
+    """
 
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("role IN ('admin', 'member')", name="ck_user_role"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(128))
     password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(16), default="member")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

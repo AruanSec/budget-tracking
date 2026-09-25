@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { setToken } from '../api'
 
 // Phase 1 stub: form + API call wiring; session storage/token handling
 // completed in Phase 2 alongside protected routes.
@@ -23,7 +25,7 @@ export default function Login() {
         return
       }
       const { access_token } = await r.json()
-      localStorage.setItem('token', access_token)
+      setToken(access_token)
       window.location.href = '/'
     } catch {
       setError('API unreachable')
@@ -68,6 +70,12 @@ export default function Login() {
         >
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
+        <p className="mt-3 text-center text-xs text-slate-500">
+          No account yet?{' '}
+          <Link to="/register" className="text-emerald-400 hover:underline">
+            Register
+          </Link>
+        </p>
       </form>
     </main>
   )

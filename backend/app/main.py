@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .routers import (
     accounts,
+    admin,
     auth,
     budgets,
     categories,
@@ -31,6 +32,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(auth.router)
+    app.include_router(admin.router)
     app.include_router(members.router)
     app.include_router(accounts.router)
     app.include_router(categories.router)

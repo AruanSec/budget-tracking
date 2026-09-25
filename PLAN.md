@@ -166,6 +166,28 @@ friction. This is the shippable core.
 
 ---
 
+## Phase 2.5 — Registration & Admin Portal — **COMPLETE** (2026-09-25)
+
+Revised the Phase 0 call that "auth is minimal": self-service signup at
+`POST /api/auth/register` (tailnet-only, so open registration is
+acceptable), and an admin role with a management portal.
+
+- **Roles:** `users.role` ∈ {admin, member} (migration 0002). Bootstrap:
+  first user to register/log in on an admin-less install claims admin;
+  the upgrade promotes the earliest existing user (alice today).
+- **Admin portal (`/admin`, admin nav tab):** household stats strip +
+  full user management — create users, promote/demote, enable/disable,
+  reset passwords, delete (blocked when the user has transaction
+  history; disable instead). Guards: nobody can disable/demote/delete
+  themselves, and the last active admin can't be removed.
+- **Reference data** (categories/accounts/income sources) stays editable
+  by any member in Settings — admin gets the same plus user control.
+- Recurring rules still have no API/UI (schema-only, deferred as before).
+- Verified: 46 backend tests; 25/25 live E2E through nginx on the
+  compose stack.
+
+---
+
 ## Phase 3 — Data Import & Automation (~4–6 weeks, OPTIONAL)
 
 - CSV import from bank statements (high value, low risk — do this first).

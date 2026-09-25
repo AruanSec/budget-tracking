@@ -1,8 +1,9 @@
 # REST API Contracts
 
 Base path: `/api` (same-origin: nginx proxies `/api/` to FastAPI).
-Auth: `Authorization: Bearer <jwt>` on everything except `/api/health`
-and `/api/auth/login`. Tokens last 7 days.
+Auth: `Authorization: Bearer *** on everything except `/api/health`,
+`/api/auth/login` and `/api/auth/register`. Tokens last 7 days; a
+disabled account's token stops working immediately.
 
 Status legend: ✅ implemented and covered by tests. Phase 2 built every
 contract below — verified against the live compose stack end-to-end.
@@ -19,8 +20,18 @@ contract below — verified against the live compose stack end-to-end.
 → `200 {"access_token": "***", "token_type": "bearer"}`
 → `401 {"detail": "Invalid credentials"}`
 
+### `POST /api/auth/register` ✅
+Self-service signup (tailnet-only). Same `TokenResponse` as login — the
+registrant is logged in immediately. Role: `member`, except on an
+install with no admin yet, where the first user claims `admin`.
+```json
+{ "username": "jane", "password": "***", "display_name": "Jane" }
+```
+→ `200` token · `409` username taken · `422` short password (<8) or bad
+username chars.
+
 ### `GET /api/auth/me` ✅
-→ `200 {"id": 1, "username": "alice", "display_name": "Alice"}`
+→ `200 {"id": 1, "username": "alice", "display_name": "Alice", "role": "admin"}`
 → `401` when missing/invalid token.
 
 ## Implemented (Phase 2)
@@ -29,7 +40,20 @@ All money fields are integer cents. All write endpoints validate the same
 rules the DB enforces, returning `422` with Pydantic error detail.
 
 ### Members
-- `GET /api/members` ✅ → list of users (id, username, display_name).
+- `GET /api/members` ✅ → list of active users (id, username, display_name, role).
+
+### Admin (all routes require `role=admin`; `403` for members)
+- `GET /api/admin/stats` ✅ → users/accounts/categories/income-sources/
+  budgets/transactions counts + this-month total cents.
+- `GET /api/admin/users` ✅ → every user incl. disabled
+  (`id, username, display_name, role, is_active, created_at`).
+- `POST /api/admin/users` ✅ `{username, password, display_name?, role}` → `201`.
+- `PATCH /api/admin/users/{id}` ✅ `{display_name?, role?, is_active?}`.
+  Guards: no self-demotion/self-deactivation/self-deletion; the last
+  active admin can never be demoted or deactivated.
+- `POST /api/admin/users/{id}/password` ✅ `{password}` → `204` (admin-set recovery).
+- `DELETE /api/admin/users/{id}` ✅ → `204`; `409` if the user entered
+  transactions (deactivate instead — history keeps attribution).
 
 ### Accounts
 - `GET /api/accounts` ✅

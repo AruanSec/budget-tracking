@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import type {
   Account,
+  AdminStats,
+  AdminUser,
   Budget,
   Category,
   DashboardSummary,
@@ -166,5 +168,73 @@ export function useUpdateIncomeSource() {
     mutationFn: ({ id, body }: { id: number; body: { name?: string; active?: boolean } }) =>
       api<IncomeSource>(`/api/income-sources/${id}`, { method: 'PATCH', body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['income-sources'] }),
+  })
+}
+
+// ---------- admin ----------
+
+export function useAdminUsers() {
+  return useQuery({
+    queryKey: ['admin', 'users'],
+    queryFn: () => api<AdminUser[]>('/api/admin/users'),
+  })
+}
+
+export function useAdminStats() {
+  return useQuery({
+    queryKey: ['admin', 'stats'],
+    queryFn: () => api<AdminStats>('/api/admin/stats'),
+    staleTime: 10_000,
+  })
+}
+
+/** Every admin mutation touches the user list and the counts strip. */
+function useInvalidateAdmin() {
+  const qc = useQueryClient()
+  return () => {
+    qc.invalidateQueries({ queryKey: ['admin'] })
+    qc.invalidateQueries({ queryKey: ['members'] })
+  }
+}
+
+export function useCreateAdminUser() {
+  const invalidate = useInvalidateAdmin()
+  return useMutation({
+    mutationFn: (body: {
+      username: string
+      password: string
+      display_name?: string | null
+      role?: 'admin' | 'member'
+    }) => api<AdminUser>('/api/admin/users', { method: 'POST', body }),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUpdateAdminUser() {
+  const invalidate = useInvalidateAdmin()
+  return useMutation({
+    mutationFn: ({
+      id,
+      body,
+    }: {
+      id: number
+      body: { display_name?: string; role?: 'admin' | 'member'; is_active?: boolean }
+    }) => api<AdminUser>(`/api/admin/users/${id}`, { method: 'PATCH', body }),
+    onSuccess: invalidate,
+  })
+}
+
+export function useResetUserPassword() {
+  return useMutation({
+    mutationFn: ({ id, newpw }: { id: number; newpw: string }) =>
+      api<void>(`/api/admin/users/${id}/password`, { method: 'POST', body: { password: newpw } }),
+  })
+}
+
+export function useDeleteAdminUser() {
+  const invalidate = useInvalidateAdmin()
+  return useMutation({
+    mutationFn: (id: number) => api<void>(`/api/admin/users/${id}`, { method: 'DELETE' }),
+    onSuccess: invalidate,
   })
 }

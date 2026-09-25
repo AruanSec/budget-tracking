@@ -2,12 +2,34 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import create_token, get_current_user, verify_password
+from ..auth import claim_admin_if_none, create_token, get_current_user, hash_password, verify_password
 from ..db import get_db
 from ..models import User
-from ..schemas import LoginRequest, TokenResponse, UserOut
+from ..schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+@router.post("/register", response_model=TokenResponse)
+def register(body: RegisterRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    """Self-service signup. New users land as 'member' — except on a
+    household with no admin yet, where the first registrant becomes the
+    admin (bootstrap). Registration is only reachable from the tailnet."""
+    if db.scalar(select(User.id).where(User.username == body.username)):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already taken",
+        )
+    display = (body.display_name or "").strip() or body.username.capitalize()
+    user = User(
+        username=body.username,
+        display_name=display,
+        password_hash=hash_password(body.password),
+    )
+    db.add(user)
+    db.commit()
+    claim_admin_if_none(db, user)
+    return TokenResponse(access_token=create_token(user))
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -17,6 +39,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
+    claim_admin_if_none(db, user)
     return TokenResponse(access_token=create_token(user))
 
 
