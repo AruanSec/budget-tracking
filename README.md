@@ -17,7 +17,7 @@ See `PLAN.md` for the phased plan, `docs/SCHEMA.md` for the data model,
 ```
 backend/    FastAPI app (app/), Alembic migrations, pytest suite
 frontend/   React SPA; nginx container serves it and proxies /api -> api:8000
-docs/       SCHEMA.md, API.md
+docs/       SCHEMA.md, API.md, HANDOFF_V1.md, SECURITY_REVIEW_2026-09-25.md
 tailscale-config/serve.json   Tailscale Serve config (https -> web:80)
 .github/workflows/ci.yml      backend tests + frontend build on push/PR
 ```
