@@ -228,7 +228,9 @@ next?" without manual math.
 
 ## Phase 5 — Hardening & Scale (~ongoing)
 
-- Security pass: encryption at rest; if bank credentials ever enter the
+- Security pass per `docs/OWASP_TOP10_PLAN.md` (phases S1–S5: injection
+  tests, auth hardening, config/supply-chain, logging/backups, design
+  gate). Encryption at rest; if bank credentials ever enter the
   system, audit that path; data export & deletion working end-to-end.
 - Performance, offline-friendly behavior, conflict resolution for sync
   across household devices.

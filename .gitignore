@@ -27,3 +27,6 @@ tailscale/
 .DS_Store
 .idea/
 .vscode/
+
+# Obsidian
+.obsidian/
