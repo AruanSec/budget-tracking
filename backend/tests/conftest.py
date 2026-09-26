@@ -3,7 +3,7 @@ import os
 # Must be set before any app.* import so Settings picks it up.
 os.environ.setdefault(
     "BUDGET_DATABASE_URL",
-    "postgresql+psycopg://budget:***@localhost:5432/budget_test",
+    "postgresql+psycopg://budget:dev-secret@localhost:5432/budget_test",
 )
 
 import pytest

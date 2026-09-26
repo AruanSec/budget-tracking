@@ -1,7 +1,7 @@
 # REST API Contracts
 
 Base path: `/api` (same-origin: nginx proxies `/api/` to FastAPI).
-Auth: `Authorization: Bearer *** on everything except `/api/health`,
+Auth: `Authorization: Bearer <jwt>` on everything except `/api/health`,
 `/api/auth/login` and `/api/auth/register`. Tokens last 7 days; a
 disabled account's token stops working immediately.
 
@@ -15,9 +15,9 @@ contract below — verified against the live compose stack end-to-end.
 
 ### `POST /api/auth/login` ✅
 ```json
-{ "username": "alice", "password": "***" }
+{ "username": "alice", "password": "correct-horse" }
 ```
-→ `200 {"access_token": "***", "token_type": "bearer"}`
+→ `200 {"access_token": "<jwt>", "token_type": "bearer"}`
 → `401 {"detail": "Invalid credentials"}`
 
 ### `POST /api/auth/register` ✅
@@ -25,7 +25,7 @@ Self-service signup (tailnet-only). Same `TokenResponse` as login — the
 registrant is logged in immediately. Role: `member`, except on an
 install with no admin yet, where the first user claims `admin`.
 ```json
-{ "username": "jane", "password": "***", "display_name": "Jane" }
+{ "username": "jane", "password": "correct-horse", "display_name": "Jane" }
 ```
 → `200` token · `409` username taken · `422` short password (<8) or bad
 username chars.

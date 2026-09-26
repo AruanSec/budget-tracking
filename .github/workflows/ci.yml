@@ -16,7 +16,7 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: budget
-          POSTGRES_PASSWORD: "***"
+          POSTGRES_PASSWORD: "dev-secret"
           POSTGRES_DB: budget_test
         ports:
           - 5432:5432
@@ -26,8 +26,8 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     env:
-      BUDGET_DATABASE_URL: "postgresql+psycopg://budget:***@localhost:5432/budget_test"
-      BUDGET_JWT_SECRET: ci-on…f477
+      BUDGET_DATABASE_URL: "postgresql+psycopg://budget:dev-secret@localhost:5432/budget_test"
+      BUDGET_JWT_SECRET: dev-secret
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

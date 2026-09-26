@@ -1,7 +1,7 @@
 // Minimal fetch wrapper: attaches the JWT, normalizes errors, and bounces
 // to /login on 401 (except for the login call itself).
 
-export const TOKEN_KEY = '***'
+export const TOKEN_KEY = 'budget_token'
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)

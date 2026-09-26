@@ -104,7 +104,8 @@ docker compose up -d postgres     # loopback 127.0.0.1:5432 is published for thi
 cd backend
 python3 -m venv .venv && source .venv/bin/activate   # or: uv venv
 pip install -e '.[dev]'
-export BUDGET_DATABASE_URL='postgresql+psycopg://budget:***@localhost:5432/budget'
+set -a; . ../.env; set +a   # load POSTGRES_PASSWORD (dev-secret on fresh clones)
+export BUDGET_DATABASE_URL="postgresql+psycopg://budget:${POSTGRES_PASSWORD}@localhost:5432/budget"
 alembic upgrade head
 uvicorn app.main:app --reload     # API on :8000, OpenAPI docs at /docs
 
@@ -114,9 +115,9 @@ npm install
 npm run dev                       # http://localhost:5173, proxies /api -> :8000
 ```
 
-`dev-secret` matches the defaults in `backend/app/config.py` and keeps
-the example copy-pasteable; for real deployments always set a random
-`BUDGET_JWT_SECRET`.
+`dev-secret` is the canonical placeholder in every committed default
+(config, alembic.ini, conftest, CI). Your real `.env` may carry a stronger
+password — the commands above read it from `.env`, so they work either way.
 
 ## Tests & builds
 
@@ -125,7 +126,8 @@ the example copy-pasteable; for real deployments always set a random
 docker compose exec -T postgres psql -U budget -tAc \
   "CREATE DATABASE budget_test" 2>/dev/null || true
 cd backend && source .venv/bin/activate
-export BUDGET_DATABASE_URL='postgresql+psycopg://budget:***@localhost:5432/budget_test'
+set -a; . ../.env; set +a   # uses POSTGRES_PASSWORD from .env
+export BUDGET_DATABASE_URL="postgresql+psycopg://budget:${POSTGRES_PASSWORD}@localhost:5432/budget_test"
 alembic upgrade head      # migrations are idempotent per DB version
 pytest -q
 
