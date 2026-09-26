@@ -186,6 +186,16 @@ acceptable), and an admin role with a management portal.
 - Verified: 46 backend tests; 25/25 live E2E through nginx on the
   compose stack.
 
+## V1 readiness (2026-09-25)
+
+- Security review passed: IDOR + SSRF, 17/17 attack checks, no
+  findings (`docs/SECURITY_REVIEW_2026-09-25.md`, script in `scripts/`).
+- All seeded/demo data wiped (`TRUNCATE ... RESTART IDENTITY`);
+  pg_dump backup at `~/Documents/budget_tracking_backups/`.
+- Fresh-install bootstrap confirmed live: first registration claims
+  admin (id=1). Deploy = register the two real household accounts.
+- JWT secret rotated to a random 32-byte value before V1.
+
 ---
 
 ## Phase 3 — Data Import & Automation (~4–6 weeks, OPTIONAL)
