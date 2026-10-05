@@ -81,6 +81,39 @@ Then browse `https://<TS_HOSTNAME>.<your-tailnet>.ts.net` from any
 device on the tailnet (both members' devices must be joined). TLS certs
 are issued and auto-renewed by Tailscale.
 
+### Deploying to a VPS
+
+Prereqs on the VPS: Docker + Compose plugin. The app listens on
+127.0.0.1:8080 only, so put your reverse proxy (Caddy/nginx/Traefik)
+in front — or run the Tailscale profile so the tailnet is the only way in.
+
+1. **Get the code** (or use published images — step 3's alternative):
+   ```sh
+   git clone https://github.com/AruanSec/budget-tracking.git && cd budget-tracking
+   ```
+2. **`.env` with real secrets** — no `dev-secret` in production:
+   ```sh
+   cp .env.example .env
+   # POSTGRES_PASSWORD and BUDGET_JWT_SECRET: openssl rand -hex 32
+   ```
+3. **Run it** — either build locally on the VPS:
+   ```sh
+   docker compose up -d --build
+   ```
+   or use the published GHCR images (published by the `Docker Publish`
+   workflow on every push to `main`; log in first if the packages are
+   private):
+   ```sh
+   echo <GITHUB_PAT> | docker login ghcr.io -u <github-user> --password-stdin
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+   ```
+4. **Verify**: `curl -s http://127.0.0.1:8080/api/health` → `{"status":"ok"}`.
+   First user to `/register` becomes `admin`.
+5. **Updating**: `git pull && docker compose up -d --build`, or re-pull
+   the `latest` GHCR images and `up -d`. Migrations self-apply at api
+   boot — no manual step.
+
 ### Day-2 operations
 
 ```sh

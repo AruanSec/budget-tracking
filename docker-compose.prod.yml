@@ -1,0 +1,10 @@
+# Override for VPS deploys: pull published GHCR images instead of
+# building from source. Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  api:
+    image: ghcr.io/aruansec/budget-tracking-api:latest
+    build: null
+  web:
+    image: ghcr.io/aruansec/budget-tracking-web:latest
+    build: null
