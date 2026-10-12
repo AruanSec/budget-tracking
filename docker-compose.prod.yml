@@ -3,8 +3,10 @@
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 services:
   api:
-    image: ghcr.io/aruansec/budget-tracking-api:latest
+    image: ghcr.io/aruansec/budget-tracking-api:${BUDGET_IMAGE_TAG:?Set BUDGET_IMAGE_TAG to a published sha-commit tag}
     build: null
+    environment:
+      BUDGET_ENVIRONMENT: production
   web:
-    image: ghcr.io/aruansec/budget-tracking-web:latest
+    image: ghcr.io/aruansec/budget-tracking-web:${BUDGET_IMAGE_TAG:?Set BUDGET_IMAGE_TAG to a published sha-commit tag}
     build: null

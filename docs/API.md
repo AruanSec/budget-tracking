@@ -3,7 +3,7 @@
 Base path: `/api` (same-origin: nginx proxies `/api/` to FastAPI).
 Auth: `Authorization: Bearer <jwt>` on everything except `/api/health`,
 `/api/auth/login` and `/api/auth/register`. Tokens last 7 days; a
-disabled account's token stops working immediately.
+disabled account's token stops working immediately. Password resets revoke existing tokens.
 
 Status legend: ✅ implemented and covered by tests. Phase 2 built every
 contract below — verified against the live compose stack end-to-end.
@@ -36,7 +36,7 @@ username chars.
 
 ## Implemented (Phase 2)
 
-All money fields are integer cents. All write endpoints validate the same
+All money fields are integer cents. Transactions currently accept USD only. All write endpoints validate the same
 rules the DB enforces, returning `422` with Pydantic error detail.
 
 ### Members
@@ -64,8 +64,7 @@ rules the DB enforces, returning `422` with Pydantic error detail.
 - `GET /api/categories` ✅ → flat list with `parent_id`; client builds tree
 - `POST /api/categories` ✅ `{name, parent_id?}`
 - `PATCH /api/categories/{id}` ✅
-- `DELETE /api/categories/{id}` ✅ → transactions keep history (SET NULL),
-  budgets for it are removed
+- `DELETE /api/categories/{id}` ✅ → `409` if used by transactions; otherwise delete it and its budgets
 
 ### Income sources
 - `GET /api/income-sources` ✅ (filter `?active=true`)

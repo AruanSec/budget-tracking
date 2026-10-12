@@ -25,6 +25,7 @@ services:
       BUDGET_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-budget}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-budget}
       BUDGET_SEED_USERS: ${BUDGET_SEED_USERS:-}
       BUDGET_JWT_SECRET: ${BUDGET_JWT_SECRET}
+      BUDGET_ENVIRONMENT: ${BUDGET_ENVIRONMENT:-development}
     depends_on:
       postgres:
         condition: service_healthy

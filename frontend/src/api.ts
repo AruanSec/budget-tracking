@@ -65,7 +65,7 @@ export async function api<T>(path: string, opts: Opts = {}): Promise<T> {
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   })
 
-  if (r.status === 401 && !path.startsWith('/api/auth')) {
+  if (r.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/register') {
     clearToken()
     window.location.href = '/login'
     throw new ApiError(401, 'Session expired')

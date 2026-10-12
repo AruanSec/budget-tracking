@@ -1,7 +1,7 @@
 # Database Schema (Phase 1)
 
 PostgreSQL 16. Source of truth: `backend/app/models.py` (SQLAlchemy 2.x) and
-`backend/alembic/versions/0001_initial.py`. CI runs `alembic check` so the
+the migrations in `backend/alembic/versions/`. CI runs `alembic check` so the
 two can never drift.
 
 ## Ground rules
@@ -44,6 +44,7 @@ Household members (design for N, currently 2).
 | display_name | varchar(128) | |
 | password_hash | varchar(255) | argon2 |
 | role | varchar(16) | 'admin' \| 'member' (check constraint), default 'member'; first user on an admin-less install claims admin |
+| token_version | int | incremented on password reset; revokes older tokens |
 | is_active | bool | default true; disabled users can't log in or use issued tokens |
 | created_at | timestamptz | |
 
@@ -103,7 +104,7 @@ source; income ⇒ income source set, no category.
 | share_cents | bigint | CHECK > 0 |
 
 UNIQUE `(transaction_id, member_id)`. Trigger-enforced:
-`SUM(share_cents) == transactions.amount_cents` at COMMIT (expenses only).
+`SUM(share_cents) == transactions.amount_cents` at COMMIT: expenses require at least one split with the exact sum; income cannot have splits. Transaction insertion, updates, and both sides of moved splits are checked.
 
 ### budgets
 | column | type | notes |

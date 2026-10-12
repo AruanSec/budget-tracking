@@ -9,7 +9,7 @@ household from locking itself out:
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -89,7 +89,11 @@ def create_user(
         role=body.role,
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Username already taken") from None
     return user
 
 
@@ -143,10 +147,12 @@ def reset_password(
     _: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> None:
-    """Admin-set password (lost-password recovery). Tokens stay valid
-    until expiry; the user should log in again after a reset."""
-    target = _get_user(db, user_id)
-    target.password_hash = hash_password(body.password)
+    """Admin-set password recovery revokes every previously issued token."""
+    _get_user(db, user_id)
+    db.execute(update(User).where(User.id == user_id).values(
+        password_hash=hash_password(body.password),
+        token_version=User.token_version + 1,
+    ))
     db.commit()
 
 

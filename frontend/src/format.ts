@@ -8,9 +8,10 @@ export function centsToStr(cents: number): string {
 }
 
 export function strToCents(value: string): number | null {
-  const n = Number.parseFloat(value)
-  if (!Number.isFinite(n) || n < 0) return null
-  return Math.round(n * 100)
+  const match = /^(\d+)(?:\.(\d{0,2}))?$/.exec(value.trim())
+  if (!match) return null
+  const cents = Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0"))
+  return Number.isSafeInteger(cents) ? cents : null
 }
 
 export function currentMonth(): string {

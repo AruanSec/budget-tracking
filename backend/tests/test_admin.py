@@ -267,6 +267,7 @@ def test_admin_resets_password(client, admin_auth):
         json={"password": NEWH},
     )
     assert r.status_code == 204
+    assert client.get("/api/auth/me", headers=_token_headers(client, member_token)).status_code == 401
     old = client.post("/api/auth/login", json={"username": username, "password": HORSE})
     assert old.status_code == 401
     new = client.post("/api/auth/login", json={"username": username, "password": NEWH})
@@ -283,7 +284,7 @@ def test_admin_delete_user(client, admin_auth):
 
 
 def test_admin_cannot_delete_user_with_history_or_self(client, admin_auth):
-    from app.models import Transaction, Category
+    from app.models import Transaction, TransactionSplit, Category
 
     db = SessionLocal()
     try:
@@ -299,6 +300,7 @@ def test_admin_cannot_delete_user_with_history_or_self(client, admin_auth):
             category_id=cat.id,
             entered_by=member_id,
         )
+        tx.splits.append(TransactionSplit(member_id=member_id, share_cents=100))
         db.add(tx)
         db.commit()
         tx_id, cat_id = tx.id, cat.id
@@ -336,3 +338,13 @@ def test_admin_stats(client, admin_auth):
     assert s["admins_active"] >= 1
     assert s["transactions_total"] >= 0
     assert s["transactions_this_month_cents"] >= 0
+
+
+def test_concurrent_registration_claims_exactly_one_admin(client):
+    from concurrent.futures import ThreadPoolExecutor
+    names = [f"race_{uuid.uuid4().hex[:10]}" for _ in range(2)]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(lambda name: _register(client, username=name)[1], names))
+    assert all(response.status_code == 200 for response in responses)
+    roles = [_me(client, response.json()["access_token"])["role"] for response in responses]
+    assert sorted(roles) == ["admin", "member"]

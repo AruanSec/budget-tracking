@@ -42,6 +42,7 @@ export function useTransactions(params: {
   type?: string
   member_id?: number
   limit?: number
+  offset?: number
 }) {
   return useQuery({
     queryKey: ['transactions', params],

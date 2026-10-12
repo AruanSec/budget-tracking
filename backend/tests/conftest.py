@@ -9,6 +9,12 @@ os.environ.setdefault(
 import pytest
 from fastapi.testclient import TestClient
 
+from sqlalchemy.engine import make_url
+
+# Fail before importing app modules or running any destructive fixtures.
+if make_url(os.environ["BUDGET_DATABASE_URL"]).database != "budget_test":
+    raise RuntimeError("Tests require BUDGET_DATABASE_URL to point at budget_test")
+
 from app.main import app
 
 
@@ -29,6 +35,8 @@ def _wipe_transactional_data():
 
     db = SessionLocal()
     try:
+        if db.scalar(text("SELECT current_database()")) != "budget_test":
+            raise RuntimeError("Refusing to wipe a database other than budget_test")
         db.execute(text("DELETE FROM transaction_splits"))
         db.execute(text("DELETE FROM transactions"))
         db.execute(text("DELETE FROM budgets"))

@@ -5,7 +5,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -32,12 +32,14 @@ def claim_admin_if_none(db: Session, user: User) -> User:
     authenticated claims the role. Safe for a single-household app — the
     only way to hit it is knowing a valid password (or registering on a
     fresh install)."""
+    # Serialize the check and promotion across concurrent requests.
+    db.execute(text("SELECT pg_advisory_xact_lock(70422101)"))
     has_admin = db.scalar(
         select(User.id).where(User.role == "admin").limit(1)
     )
     if has_admin is None:
         user.role = "admin"
-        db.commit()
+    db.commit()  # releases the bootstrap lock even when an admin exists
     return user
 
 
@@ -46,6 +48,7 @@ def create_token(user: User) -> str:
     payload = {
         "sub": str(user.id),
         "username": user.username,
+        "ver": user.token_version,
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_ttl_minutes),
     }
@@ -65,13 +68,15 @@ def get_current_user(
             credentials.credentials,
             settings.jwt_secret,
             algorithms=[settings.jwt_algorithm],
+            options={"require": ["sub", "exp", "iat"]},
         )
-    except jwt.PyJWTError:
+        user_id = int(payload["sub"])
+    except (jwt.PyJWTError, ValueError, TypeError, KeyError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
-    user = db.get(User, int(payload["sub"]))
-    if user is None or not user.is_active:
+    user = db.get(User, user_id)
+    if user is None or not user.is_active or payload.get("ver", 0) != user.token_version:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive"
         )

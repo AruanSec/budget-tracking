@@ -48,6 +48,7 @@ LAN reverse proxy.
   consistent after the first boot.
 - `BUDGET_JWT_SECRET` — generate: `openssl rand -hex 32` (rotating it
   signs everyone out, by design).
+- `BUDGET_ENVIRONMENT` — set to `production` on deployed instances to reject placeholder secrets.
 - `BUDGET_SEED_USERS` — optional; see bootstrap below. Clear it after
   seeding so passwords don't linger in `.env`.
 
@@ -70,49 +71,45 @@ household stats at `/admin`. Lockout guards prevent an admin from
 demoting/disabling/deleting themselves or removing the last active
 admin.
 
-### Reach it from the household devices (Tailscale)
+### Ubuntu server with host Tailscale Serve
+
+Follow [the Ubuntu deployment draft](docs/DEPLOY_UBUNTU.md) for Docker
+installation, production secrets, first-account setup, backups, and updates.
+Run Tailscale on the Ubuntu host and start the default Compose stack:
 
 ```sh
-# .env: TS_AUTHKEY (from login.tailscale.com/admin/settings/keys), TS_HOSTNAME=budget
-docker compose --profile tailscale up -d
+docker compose up -d --build
+curl --fail http://127.0.0.1:8080/api/health
+sudo tailscale serve --bg --https=443 http://127.0.0.1:8080
+sudo tailscale serve status
 ```
 
-Then browse `https://<TS_HOSTNAME>.<your-tailnet>.ts.net` from any
-device on the tailnet (both members' devices must be joined). TLS certs
-are issued and auto-renewed by Tailscale.
+Use the HTTPS URL printed by Serve from a household device connected to
+the tailnet. Tailscale terminates TLS and manages certificates; the app
+continues listening on loopback HTTP. Background mode persists across
+reboots. See [Tailscale's Serve reference](https://tailscale.com/docs/reference/tailscale-cli/serve).
+Set `BUDGET_ENVIRONMENT=production` and replace both placeholder secrets
+before exposing the app to household devices.
 
-### Deploying to a VPS
+This host-based setup leaves the `tailscale` Compose profile disabled.
+The sidecar remains an alternative for installations that run Tailscale
+inside Docker; its `TS_AUTHKEY`, `TS_HOSTNAME`, and `serve.json` settings
+are separate from host Tailscale.
 
-Prereqs on the VPS: Docker + Compose plugin. The app listens on
-127.0.0.1:8080 only, so put your reverse proxy (Caddy/nginx/Traefik)
-in front — or run the Tailscale profile so the tailnet is the only way in.
+### Published images
 
-1. **Get the code** (or use published images — step 3's alternative):
-   ```sh
-   git clone https://github.com/AruanSec/budget-tracking.git && cd budget-tracking
-   ```
-2. **`.env` with real secrets** — no `dev-secret` in production:
-   ```sh
-   cp .env.example .env
-   # POSTGRES_PASSWORD and BUDGET_JWT_SECRET: openssl rand -hex 32
-   ```
-3. **Run it** — either build locally on the VPS:
-   ```sh
-   docker compose up -d --build
-   ```
-   or use the published GHCR images (published by the `Docker Publish`
-   workflow on every push to `main`; log in first if the packages are
-   private):
-   ```sh
-   echo <GITHUB_PAT> | docker login ghcr.io -u <github-user> --password-stdin
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-   ```
-4. **Verify**: `curl -s http://127.0.0.1:8080/api/health` → `{"status":"ok"}`.
-   First user to `/register` becomes `admin`.
-5. **Updating**: `git pull && docker compose up -d --build`, or re-pull
-   the `latest` GHCR images and `up -d`. Migrations self-apply at api
-   boot — no manual step.
+The Ubuntu guide also covers GHCR deployment with
+`docker-compose.prod.yml`. Set `BUDGET_IMAGE_TAG=sha-<full-commit-sha>`
+for a commit whose CI and Docker Publish workflows both succeeded, then:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+Use these same two Compose files for subsequent deployments. For local
+builds, use the base Compose file and `up -d --build`. Migrations apply
+automatically when the API starts. Back up before updating.
 
 ### Day-2 operations
 
@@ -136,7 +133,7 @@ docker compose up -d postgres     # loopback 127.0.0.1:5432 is published for thi
 # backend — shell 1
 cd backend
 python3 -m venv .venv && source .venv/bin/activate   # or: uv venv
-pip install -e '.[dev]'
+pip install -r requirements-dev.lock && pip install --no-deps -e .
 set -a; . ../.env; set +a   # load POSTGRES_PASSWORD (dev-secret on fresh clones)
 export BUDGET_DATABASE_URL="postgresql+psycopg://budget:${POSTGRES_PASSWORD}@localhost:5432/budget"
 alembic upgrade head
@@ -155,17 +152,18 @@ password — the commands above read it from `.env`, so they work either way.
 ## Tests & builds
 
 ```sh
-# backend (46 tests; needs the compose postgres up)
+# backend (needs the compose postgres up)
 docker compose exec -T postgres psql -U budget -tAc \
   "CREATE DATABASE budget_test" 2>/dev/null || true
 cd backend && source .venv/bin/activate
 set -a; . ../.env; set +a   # uses POSTGRES_PASSWORD from .env
 export BUDGET_DATABASE_URL="postgresql+psycopg://budget:${POSTGRES_PASSWORD}@localhost:5432/budget_test"
 alembic upgrade head      # migrations are idempotent per DB version
+alembic check
 pytest -q
 
 # frontend
-cd frontend && npm run build      # tsc -b && vite build; npm run lint (oxlint)
+cd ../frontend && npm run build && npm run lint && npm test
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same on every push/PR against

@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { clearToken } from '../api'
 import { useMe } from '../hooks'
@@ -12,11 +13,13 @@ const tabs = [
 
 export default function Layout() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { data: me } = useMe()
   const visibleTabs = tabs.filter((t) => !('adminOnly' in t && t.adminOnly) || me?.role === 'admin')
 
   function logout() {
     clearToken()
+    queryClient.clear()
     navigate('/login')
   }
 

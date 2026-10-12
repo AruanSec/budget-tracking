@@ -5,12 +5,16 @@ WORKDIR /srv
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-COPY pyproject.toml ./
+COPY pyproject.toml requirements.lock ./
+RUN pip install --no-cache-dir -r requirements.lock
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
 
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir --no-deps .
+
+RUN useradd --system --uid 10001 --create-home budget
+USER budget
 
 EXPOSE 8000
 

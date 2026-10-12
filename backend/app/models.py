@@ -52,6 +52,7 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(128))
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(16), default="member")
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

@@ -91,3 +91,45 @@ def test_transaction_type_target_check(db, two_members):
     db.add(tx)
     with pytest.raises((IntegrityError, DBAPIError)):
         db.commit()
+
+
+def test_expense_without_splits_rejected(db, two_members):
+    a, b = two_members
+    _expense(db, a, b, _category(db), [])
+    with pytest.raises(IntegrityError):
+        db.commit()
+
+
+def test_moving_split_checks_old_transaction(db, two_members):
+    a, b = two_members
+    cat = _category(db)
+    old = _expense(db, a, b, cat, [(a, 10000)])
+    new = _expense(db, a, b, cat, [(b, 10000)])
+    db.commit()
+    # The destination stays balanced, but the source would be left empty.
+    new.amount_cents = 20000
+    old.splits[0].transaction_id = new.id
+    with pytest.raises(IntegrityError):
+        db.commit()
+
+
+def test_income_cannot_have_splits(db, two_members):
+    from app.models import IncomeSource
+    a, b = two_members
+    source = IncomeSource(name=f"income_{uuid.uuid4().hex[:8]}", member_id=a.id)
+    db.add(source)
+    db.flush()
+    tx = Transaction(type="income", amount_cents=100, occurred_on=date(2031, 1, 1),
+                     income_source_id=source.id, entered_by=a.id)
+    tx.splits.append(TransactionSplit(member_id=b.id, share_cents=100))
+    db.add(tx)
+    with pytest.raises(IntegrityError):
+        db.commit()
+
+
+def test_create_then_delete_transaction_in_same_commit(db, two_members):
+    a, b = two_members
+    tx = _expense(db, a, b, _category(db), [(a, 10000)])
+    db.flush()
+    db.delete(tx)
+    db.commit()

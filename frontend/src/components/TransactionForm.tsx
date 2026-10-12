@@ -61,7 +61,15 @@ export default function TransactionForm({
   }, [editing, me])
 
   const amountCents = amount ? strToCents(amount) : null
-  const activeMembers = useMemo(() => members ?? [], [members])
+  const activeMembers = useMemo(() => {
+    const rows = [...(members ?? [])]
+    for (const split of editing?.splits ?? []) {
+      if (!rows.some((m) => m.id === split.member_id)) {
+        rows.push({ id: split.member_id, username: "", display_name: `Member #${split.member_id} (inactive)`, role: "member" })
+      }
+    }
+    return rows
+  }, [members, editing])
 
   const splitRows = useMemo(() => {
     if (type !== 'expense') return []
@@ -105,7 +113,7 @@ export default function TransactionForm({
             ...base,
             category_id: categoryId === '' ? null : categoryId,
             paid_by: paidBy === '' ? null : paidBy,
-            splits: splitRows.map((s) => ({ member_id: s.member_id, share_cents: s.share_cents })),
+            splits: splitRows.filter((s) => s.share_cents > 0).map((s) => ({ member_id: s.member_id, share_cents: s.share_cents })),
           }
         : { ...base, income_source_id: incomeSourceId === '' ? null : incomeSourceId }
 

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from ..auth import claim_admin_if_none, create_token, get_current_user, hash_password, verify_password
 from ..db import get_db
@@ -27,7 +28,11 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)) -> TokenRespo
         password_hash=hash_password(body.password),
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Username already taken") from None
     claim_admin_if_none(db, user)
     return TokenResponse(access_token=create_token(user))
 

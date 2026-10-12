@@ -45,7 +45,7 @@ class TransactionIn(BaseModel):
     amount_cents: int = Field(gt=0)
     occurred_on: date
     description: str = Field(default="", max_length=255)
-    currency: str = Field(default="USD", min_length=3, max_length=3)
+    currency: Literal["USD"] = "USD"
     account_id: int | None = None
     category_id: int | None = None
     income_source_id: int | None = None
@@ -181,23 +181,35 @@ class AccountOut(BaseModel):
 
 # ---------- partial updates (PATCH) ----------
 
-class AccountUpdate(BaseModel):
+class NonNullPatch(BaseModel):
+    """Omitted fields are unchanged; only explicitly nullable fields may be cleared."""
+
+    @model_validator(mode="after")
+    def reject_null(self):
+        nullable = {"parent_id", "account_id", "category_id", "income_source_id", "paid_by"}
+        for name in self.model_fields_set:
+            if name not in nullable and getattr(self, name) is None:
+                raise ValueError(f"{name} must not be null")
+        return self
+
+
+class AccountUpdate(NonNullPatch):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     type: str | None = Field(default=None, max_length=32)
     archived: bool | None = None
 
 
-class CategoryUpdate(BaseModel):
+class CategoryUpdate(NonNullPatch):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     parent_id: int | None = None
 
 
-class IncomeSourceUpdate(BaseModel):
+class IncomeSourceUpdate(NonNullPatch):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     active: bool | None = None
 
 
-class TransactionUpdate(BaseModel):
+class TransactionUpdate(NonNullPatch):
     """Partial update. `type` is immutable — delete and re-enter instead.
     If `splits` is given, it replaces the whole set (must sum to the
     effective amount)."""
@@ -278,7 +290,7 @@ class AdminUserCreate(BaseModel):
     role: Literal["admin", "member"] = "member"
 
 
-class AdminUserUpdate(BaseModel):
+class AdminUserUpdate(NonNullPatch):
     display_name: str | None = Field(default=None, min_length=1, max_length=128)
     role: Literal["admin", "member"] | None = None
     is_active: bool | None = None

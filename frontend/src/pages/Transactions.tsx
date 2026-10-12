@@ -4,6 +4,7 @@ import TransactionForm from '../components/TransactionForm'
 import {
   useCategories,
   useDeleteTransaction,
+  useDashboard,
   useIncomeSources,
   useMe,
   useMembers,
@@ -15,6 +16,7 @@ import type { Transaction } from '../types'
 export default function Transactions() {
   const [month, setMonth] = useState(currentMonth())
   const [typeFilter, setTypeFilter] = useState('')
+  const [offset, setOffset] = useState(0)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Transaction | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
@@ -23,8 +25,10 @@ export default function Transactions() {
   const { data: transactions, isLoading } = useTransactions({
     month,
     type: typeFilter || undefined,
-    limit: 200,
+    limit: 50,
+    offset,
   })
+  const { data: summary } = useDashboard(month)
   const { data: categories } = useCategories()
   const { data: incomeSources } = useIncomeSources()
   const { data: members } = useMembers()
@@ -54,14 +58,11 @@ export default function Transactions() {
   }, [transactions])
 
   const totals = useMemo(() => {
-    let income = 0
-    let expense = 0
-    for (const tx of transactions ?? []) {
-      if (tx.type === 'income') income += tx.amount_cents
-      else expense += tx.amount_cents
+    return {
+      income: typeFilter === 'expense' ? 0 : summary?.household.income_cents,
+      expense: typeFilter === 'income' ? 0 : summary?.household.expense_cents,
     }
-    return { income, expense }
-  }, [transactions])
+  }, [summary, typeFilter])
 
   async function doDelete(id: number) {
     setError(null)
@@ -92,7 +93,7 @@ export default function Transactions() {
         <input
           type="month"
           value={month}
-          onChange={(e) => e.target.value && setMonth(e.target.value)}
+          onChange={(e) => { if (e.target.value) { setMonth(e.target.value); setOffset(0) } }}
           className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-emerald-500 [color-scheme:dark]"
         />
         <div className="flex gap-1 rounded-lg bg-slate-900 p-1">
@@ -103,7 +104,7 @@ export default function Transactions() {
           ].map(([v, label]) => (
             <button
               key={v}
-              onClick={() => setTypeFilter(v)}
+              onClick={() => { setTypeFilter(v); setOffset(0) }}
               className={`rounded-md px-2.5 py-1 text-xs ${typeFilter === v ? 'bg-slate-700 text-slate-100' : 'text-slate-400'}`}
             >
               {label}
@@ -111,8 +112,8 @@ export default function Transactions() {
           ))}
         </div>
         <span className="ml-auto text-xs text-slate-500">
-          <span className="text-emerald-400">+{centsToStr(totals.income)}</span>{' '}
-          <span className="text-red-400">−{centsToStr(totals.expense)}</span>
+          <span className="text-emerald-400">+{totals.income === undefined ? '…' : centsToStr(totals.income)}</span>{' '}
+          <span className="text-red-400">−{totals.expense === undefined ? '…' : centsToStr(totals.expense)}</span>
         </span>
       </div>
 
@@ -134,9 +135,15 @@ export default function Transactions() {
 
       {!isLoading && (transactions ?? []).length === 0 && (
         <p className="mt-6 text-sm text-slate-500">
-          Nothing recorded in {monthLabel(month)} yet. Tap + Add for the first one.
+          {offset ? 'No more transactions on this page.' : `Nothing recorded in ${monthLabel(month)} yet. Tap + Add for the first one.`}
         </p>
       )}
+
+      <div className="mt-4 flex items-center justify-between text-sm">
+        <button disabled={offset === 0 || isLoading} onClick={() => setOffset(Math.max(0, offset - 50))} className="disabled:opacity-40">Previous</button>
+        <span>Page {offset / 50 + 1}</span>
+        <button disabled={isLoading || (transactions?.length ?? 0) < 50} onClick={() => setOffset(offset + 50)} className="disabled:opacity-40">Next</button>
+      </div>
 
       <div className="mt-4 space-y-4">
         {groups.map((g) => (
