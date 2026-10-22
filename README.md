@@ -24,10 +24,11 @@ tailscale-config/serve.json   Tailscale Serve config (https -> web:80)
 
 ## Prerequisites
 
-Docker (with the Compose plugin), Python 3.12+, Node 22+ (dev/test
-only — the containers need none of the latter).
+For local development: Docker with the Compose plugin, Python 3.12+, and
+Node 22+. Production also uses the Bitwarden Secrets Manager CLI (`bws`),
+SOPS, age, and Tailscale. The containers do not require host Python or Node.
 
-## Spin up the full stack (recommended)
+## Local quick start
 
 From the repo root:
 
@@ -37,10 +38,8 @@ docker compose up -d --build
 curl -s http://127.0.0.1:8080/api/health   # {"status":"ok"}
 ```
 
-That's it: the `api` container runs `alembic upgrade head` before
-serving, so migrations apply themselves on every boot. The app listens
-on **127.0.0.1:8080 only** — expose it with Tailscale (below) or your
-LAN reverse proxy.
+The API applies migrations automatically on startup. The app listens on
+**127.0.0.1:8080 only**.
 
 `.env` first-boot values:
 
@@ -48,80 +47,165 @@ LAN reverse proxy.
   consistent after the first boot.
 - `BUDGET_JWT_SECRET` — generate: `openssl rand -hex 32` (rotating it
   signs everyone out, by design).
-- `BUDGET_ENVIRONMENT` — set to `production` on deployed instances to reject placeholder secrets.
-- `BUDGET_SEED_USERS` — optional; see bootstrap below. Clear it after
-  seeding so passwords don't linger in `.env`.
+- `BUDGET_ENVIRONMENT` — keep `development` locally.
+- `BUDGET_SEED_USERS` — optional command-line bootstrap; leave it empty when
+  creating users through `/register`.
 
-### First users
+## Production deployment walkthrough
 
-Two equivalent paths:
+This is the shortest production path for an Ubuntu server. See
+[the full Ubuntu guide](docs/DEPLOY_UBUNTU.md) for installation commands,
+backups, restore testing, updates, and troubleshooting.
 
-1. **Seed (one-shot bootstrap):** set `BUDGET_SEED_USERS='alice:pw:Alice:admin,bob:pw2:Bob'`
-   and run `docker compose exec api python -m app.seed` (idempotent).
-   Format: `username:password[:Display Name[:role]]`, role defaults to
-   `member`.
-2. **Register:** open `http://127.0.0.1:8080/register` (or the
-   tailnet URL). The **first** user to register — or to log in — on an
-   install with no admin claims `admin`; everyone after that joins as
-   `member`.
+### Phase 1 — Prepare the server
 
-After the first admin exists: members sign up at `/register`; the
-admin manages roles, enable/disable, password resets, deletion, and
-household stats at `/admin`. Lockout guards prevent an admin from
-demoting/disabling/deleting themselves or removing the last active
-admin.
+1. Install Docker with the Compose plugin.
+2. Install and connect Tailscale on the host.
+3. Install [`bws`](https://bitwarden.com/help/secrets-manager-cli/),
+   [SOPS](https://github.com/getsops/sops), and
+   [age](https://github.com/FiloSottile/age).
+4. Clone this repository and enter its directory.
 
-### Ubuntu server with host Tailscale Serve
+Do not start Compose yet; PostgreSQL must receive its permanent password on
+its first startup.
 
-Follow [the Ubuntu deployment draft](docs/DEPLOY_UBUNTU.md) for Docker
-installation, production secrets, first-account setup, backups, and updates.
-Run Tailscale on the Ubuntu host and start the default Compose stack:
+### Phase 2 — Store application secrets in Bitwarden
+
+Create a Bitwarden Secrets Manager project containing these exact keys:
+
+| Key | Value |
+|---|---|
+| `POSTGRES_PASSWORD` | output from `openssl rand -hex 32` |
+| `BUDGET_JWT_SECRET` | output from a second `openssl rand -hex 32` |
+
+Create a machine account with read-only access to this project and generate
+its access token. Keep the database password unchanged after first startup;
+changing it in Bitwarden does not update an existing PostgreSQL volume.
+
+### Phase 3 — Encrypt the Bitwarden access token
+
+Generate an age identity as the deployment user:
 
 ```sh
-docker compose up -d --build
+umask 077
+mkdir -p "$HOME/.config/sops/age" secrets
+age-keygen -o "$HOME/.config/sops/age/keys.txt"
+age-keygen -y "$HOME/.config/sops/age/keys.txt"
+```
+
+Copy the printed `age1...` public recipient into a new `.sops.yaml`:
+
+```yaml
+creation_rules:
+  - path_regex: secrets/.*\.env$
+    age: age1REPLACE_WITH_YOUR_PUBLIC_RECIPIENT
+```
+
+Enter the Bitwarden machine access token and encrypt it immediately:
+
+```sh
+read -rsp 'Bitwarden access token: ' BWS_ACCESS_TOKEN; echo
+printf 'BWS_ACCESS_TOKEN=%s\n' "$BWS_ACCESS_TOKEN" > secrets/bws-access-token.enc.env
+unset BWS_ACCESS_TOKEN
+sops --encrypt --in-place secrets/bws-access-token.enc.env
+```
+
+Open the encrypted file and confirm its value starts with `ENC[`. Never commit
+the age private identity at `$HOME/.config/sops/age/keys.txt`; back it up in a
+separate protected location.
+
+### Phase 4 — Configure and start the app
+
+Create `.env` with non-secret configuration only:
+
+```dotenv
+POSTGRES_USER=budget
+POSTGRES_DB=budget
+BUDGET_ENVIRONMENT=production
+BUDGET_SEED_USERS=
+```
+
+Start the stack. SOPS decrypts only the Bitwarden access token in memory,
+then `bws run` supplies the two application secrets to Compose:
+
+```sh
+sops exec-env secrets/bws-access-token.enc.env \
+  'bws run -- sudo --preserve-env=POSTGRES_PASSWORD,BUDGET_JWT_SECRET docker compose up -d --build'
+sudo docker compose ps
+sudo docker compose logs --tail 50 api
 curl --fail http://127.0.0.1:8080/api/health
+```
+
+The expected health response is `{"status":"ok"}`. Migrations apply
+automatically whenever the API starts.
+
+### Phase 5 — Test securely through an SSH tunnel
+
+Before enabling Tailscale Serve, forward the server's loopback-only web port
+to your laptop. Run this command on the laptop, replacing the SSH user and
+server address:
+
+```sh
+ssh -N -o ExitOnForwardFailure=yes \
+  -L 127.0.0.1:8080:127.0.0.1:8080 <user>@<server-address>
+```
+
+Keep that terminal open, then visit <http://127.0.0.1:8080> on the laptop.
+Traffic is encrypted by SSH, and port 8080 remains bound only to loopback on
+the server. Stop the tunnel with `Ctrl+C` when finished.
+
+If port 8080 is already in use on the laptop, choose another local port; the
+server-side port remains 8080:
+
+```sh
+ssh -N -o ExitOnForwardFailure=yes \
+  -L 127.0.0.1:18080:127.0.0.1:8080 <user>@<server-address>
+```
+
+Then open <http://127.0.0.1:18080>. The server must already be reachable over
+SSH, preferably using key-based authentication. Do not change the Compose
+port binding or open port 8080 in the server firewall.
+
+### Phase 6 — Enable private HTTPS
+
+```sh
 sudo tailscale serve --bg --https=443 http://127.0.0.1:8080
 sudo tailscale serve status
 ```
 
-Use the HTTPS URL printed by Serve from a household device connected to
-the tailnet. Tailscale terminates TLS and manages certificates; the app
-continues listening on loopback HTTP. Background mode persists across
-reboots. See [Tailscale's Serve reference](https://tailscale.com/docs/reference/tailscale-cli/serve).
-Set `BUDGET_ENVIRONMENT=production` and replace both placeholder secrets
-before exposing the app to household devices.
+Use the HTTPS URL printed by Tailscale Serve. Keep the deployment private to
+the tailnet; public ports and Tailscale Funnel are not needed.
 
-This host-based setup leaves the `tailscale` Compose profile disabled.
-The sidecar remains an alternative for installations that run Tailscale
-inside Docker; its `TS_AUTHKEY`, `TS_HOSTNAME`, and `serve.json` settings
-are separate from host Tailscale.
+### Phase 7 — Create the admin
 
-### Published images
+1. Open `<your-tailscale-url>/register`. To create the admin before enabling
+   Tailscale Serve, keep the Phase 5 tunnel open and instead visit
+   <http://127.0.0.1:8080/register> on the laptop.
+2. Register your account first. On a fresh database, it automatically becomes
+   the admin.
+3. Let other household members register afterward; they become regular
+   members.
 
-The Ubuntu guide also covers GHCR deployment with
-`docker-compose.prod.yml`. Set `BUDGET_IMAGE_TAG=sha-<full-commit-sha>`
-for a commit whose CI and Docker Publish workflows both succeeded, then:
+The admin manages users, roles, account access, password resets, and household
+statistics at `/admin`.
 
-```sh
-docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-```
+### Phase 8 — Operate and update
 
-Use these same two Compose files for subsequent deployments. For local
-builds, use the base Compose file and `up -d --build`. Migrations apply
-automatically when the API starts. Back up before updating.
-
-### Day-2 operations
+Routine inspection and stop commands do not need Bitwarden:
 
 ```sh
-docker compose logs -f api        # uvicorn + migration output
-docker compose ps                 # postgres must be (healthy); web/api Up
-docker compose up -d --build      # redeploy after pulling changes
-docker compose down               # stop (data survives in the pgdata volume)
+sudo docker compose ps
+sudo docker compose logs -f api
+sudo docker compose down          # data remains in the pgdata volume
 ```
 
-Backups: cron'd `pg_dump` off-box + a periodic restore test — recipe in
-`docs/SCHEMA.md` § Backups.
+Starting or updating containers must use the Phase 4 SOPS/Bitwarden command.
+Back up PostgreSQL off-host before updates and periodically test restoration.
+The backup recipe is in [the schema guide](docs/SCHEMA.md#backups).
+
+To use published GHCR images instead of building locally, add
+`BUDGET_IMAGE_TAG=sha-<full-commit-sha>` to `.env` and follow the published
+images section of [the Ubuntu guide](docs/DEPLOY_UBUNTU.md#optional-use-published-images).
 
 ## Development (hot reload, no image rebuilds)
 
@@ -163,7 +247,7 @@ alembic check
 pytest -q
 
 # frontend
-cd ../frontend && npm run build && npm run lint && npm test
+cd ../frontend && npm run build && npm run lint
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same on every push/PR against

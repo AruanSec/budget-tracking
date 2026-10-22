@@ -90,47 +90,85 @@ workstation must first be committed and pushed, or transferred separately.
 Keep this directory name and location stable so subsequent Compose commands
 continue using the same project and PostgreSQL volume.
 
-## 4. Configure production secrets
+## 4. Configure production secrets with Bitwarden
 
-For a fresh install:
+Install the [Bitwarden Secrets Manager CLI (`bws`)](https://bitwarden.com/help/secrets-manager-cli/),
+[SOPS](https://github.com/getsops/sops), and
+[age](https://github.com/FiloSottile/age) on the server.
+
+In Bitwarden Secrets Manager, create a project for this deployment and add
+these secrets. Their names must match exactly because `bws run` exports them
+as environment variables:
+
+| Secret | Value |
+|---|---|
+| `POSTGRES_PASSWORD` | `openssl rand -hex 32` |
+| `BUDGET_JWT_SECRET` | a separate `openssl rand -hex 32` value |
+
+Create a machine account with read access only to that project and generate
+an access token. The application secrets stay in Bitwarden; the access token
+is the only bootstrap secret stored on the server.
+
+Generate an age identity as the deployment user (not with `sudo`):
 
 ```bash
 umask 077
-cp .env.example .env
-chmod 600 .env
-openssl rand -hex 32
-openssl rand -hex 32
-nano .env
+mkdir -p "$HOME/.config/sops/age" secrets
+age-keygen -o "$HOME/.config/sops/age/keys.txt"
+age-keygen -y "$HOME/.config/sops/age/keys.txt"
 ```
 
-Use the two independently generated values for these settings:
+Copy the `age1...` recipient printed by the final command. Create `.sops.yaml`
+in the repository, replacing the example recipient:
+
+```yaml
+creation_rules:
+  - path_regex: secrets/.*\.env$
+    age: age1REPLACE_WITH_YOUR_PUBLIC_RECIPIENT
+```
+
+Create and immediately encrypt the bootstrap file. Paste the Bitwarden
+machine access token when prompted:
+
+```bash
+read -rsp 'Bitwarden access token: ' BWS_ACCESS_TOKEN; echo
+printf 'BWS_ACCESS_TOKEN=%s\n' "$BWS_ACCESS_TOKEN" > secrets/bws-access-token.enc.env
+unset BWS_ACCESS_TOKEN
+sops --encrypt --in-place secrets/bws-access-token.enc.env
+```
+
+Confirm that the file contains `ENC[...]`, not the plaintext token. Back up
+the age identity separately with restrictive permissions; never commit it.
+The encrypted file and `.sops.yaml` may be committed because they contain
+only ciphertext and the public recipient.
+
+Keep non-secret Compose settings in `.env`:
 
 ```dotenv
 POSTGRES_USER=budget
 POSTGRES_DB=budget
-POSTGRES_PASSWORD=<first-generated-value>
-BUDGET_JWT_SECRET=<second-generated-value>
 BUDGET_ENVIRONMENT=production
 BUDGET_SEED_USERS=
 ```
 
-Replace the angle-bracket placeholders before starting the app. Retain the
-other `.env.example` settings. Registration will create the household
-accounts, so seed passwords are unnecessary.
+If using published images, put `BUDGET_IMAGE_TAG` there too. Do not put
+`POSTGRES_PASSWORD`, `BUDGET_JWT_SECRET`, or `BWS_ACCESS_TOKEN` in `.env`.
+Registration creates the household accounts, so seed passwords are
+unnecessary.
 
 Production mode rejects placeholder database passwords and JWT secrets
-shorter than 32 bytes. Hexadecimal secrets also avoid URL-escaping issues
-in the Compose database connection string. Keep `.env` private and out of
-Git. For an existing installation, preserve its database credentials:
-editing `POSTGRES_PASSWORD` does not change the password inside an already
-initialized PostgreSQL volume.
+shorter than 32 bytes. Hexadecimal database passwords also avoid URL-escaping
+issues in the Compose connection string. For an existing installation, copy
+its current database password into Bitwarden: changing the Bitwarden value
+does not change the password inside an initialized PostgreSQL volume.
 
 ## 5. Build, start, and verify locally
 
 From `~/apps/budget-tracking`:
 
 ```bash
-sudo docker compose up -d --build
+sops exec-env secrets/bws-access-token.enc.env \
+  'bws run -- sudo --preserve-env=POSTGRES_PASSWORD,BUDGET_JWT_SECRET docker compose up -d --build'
 sudo docker compose ps
 sudo docker compose logs --tail 50 api
 curl --fail http://127.0.0.1:8080/api/health
@@ -182,8 +220,9 @@ printf 'Backup saved to %s\n' "$budget_backup_file"
 ```
 
 The dump contains household accounts and financial history. Copy it to a
-protected second machine or backup destination. Store `.env` separately
-in a secure backup so a replacement server can recover its configuration.
+protected second machine or backup destination. Back up the age identity
+separately so a replacement server can decrypt the Bitwarden bootstrap token;
+the encrypted file alone is not sufficient for recovery.
 Use the credentials above only if you retained `POSTGRES_USER=budget` and
 `POSTGRES_DB=budget`.
 
@@ -209,7 +248,8 @@ Make and copy a backup before updating, then:
 ```bash
 cd "$HOME/apps/budget-tracking"
 git pull --ff-only
-sudo docker compose up -d --build
+sops exec-env secrets/bws-access-token.enc.env \
+  'bws run -- sudo --preserve-env=POSTGRES_PASSWORD,BUDGET_JWT_SECRET docker compose up -d --build'
 sudo docker compose logs --tail 50 api
 curl --fail http://127.0.0.1:8080/api/health
 sudo tailscale serve status
@@ -223,7 +263,8 @@ production installation back.
 Docker and tailscaled are enabled at boot. Compose's `unless-stopped`
 restart policy restarts running services after reboot, and Serve's `--bg`
 configuration persists. Manually stopped containers remain stopped; start
-them again with `sudo docker compose up -d`.
+them again with the SOPS/Bitwarden-wrapped `docker compose up -d` command
+shown above.
 
 `sudo docker compose down` stops the app while preserving the PostgreSQL
 volume. The `-v` option removes volumes and must not be used for routine
@@ -245,7 +286,8 @@ for every start, update, and status command:
 
 ```bash
 sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+sops exec-env secrets/bws-access-token.enc.env \
+  'bws run -- sudo --preserve-env=POSTGRES_PASSWORD,BUDGET_JWT_SECRET docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d'
 sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 ```
 
@@ -255,8 +297,12 @@ Continue using host Tailscale Serve exactly as described above.
 ## Troubleshooting
 
 - Local health fails: inspect `sudo docker compose logs --tail 100 api postgres web`.
-  A secret-validation error means `.env` still contains a placeholder or
-  production JWT secret shorter than 32 bytes.
+  A secret-validation error usually means a Bitwarden secret is missing,
+  misnamed, or shorter than 32 bytes.
+- `bws` reports that it is unauthorized: run
+  `sops exec-env secrets/bws-access-token.enc.env 'bws project list'`, then
+  check
+  that the machine account and its project read access are still active.
 - Database authentication fails: check the credentials used when the volume
   was initialized. Preserve the volume and reconcile the password; deleting
   the volume would delete household data.
